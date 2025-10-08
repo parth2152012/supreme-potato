@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI/ML SOC Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; background-color: #f0f2f5; }
+        h1 { color: #1d2129; }
+        #dashboard { background-color: #fff; border: 1px solid #dddfe2; border-radius: 8px; padding: 20px; }
+        .log-container { margin-top: 20px; min-height: 60px; }
+        .log { border: 1px solid #c3e6cb; background-color: #d4edda; color: #155724; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .alert { border: 1px solid #f5c6cb; background-color: #f8d7da; color: #721c24; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .alert-resolved { border-color: #b8daff; background-color: #cce5ff; color: #004085; }
+        .alert button { margin-left: 10px; padding: 5px 10px; border: 1px solid #721c24; background: transparent; color: #721c24; border-radius: 4px; cursor: pointer; }
+        .no-alerts { color: #777; text-align: center; padding: 20px; background: var(--card-bg); border-radius: 8px; }
+        #whitelist-management { margin-top: 20px; }
+        #whitelist-management input { padding: 8px; border-radius: 4px; border: 1px solid #dddfe2; margin-right: 10px; }
+        #whitelist-management button { padding: 8px 12px; border: none; background-color: #1877f2; color: white; border-radius: 4px; cursor: pointer; }
+        .whitelist-item { display: flex; justify-content: space-between; align-items: center; border: 1px solid #dddfe2; background-color: #f7f7f7; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+        .whitelist-item button { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div id="dashboard">
+        <h1>AI/ML SOC Dashboard</h1>
+        
+        <h2>Failed Attempts / Alerts</h2>
+        <div id="alerts-container" class="log-container">
+            <p class="no-alerts">No alerts to display. Fetching...</p>
+        </div>
+
+        <h2 style="margin-top: 40px;">Successful Attempts</h2>
+        <div id="success-container" class="log-container">
+            <p class="no-alerts">No successful logs to display. Fetching...</p>
+        </div>
+
+        <h2 style="margin-top: 40px;">Whitelist Management</h2>
+        <div id="whitelist-management">
+            <div>
+                <input type="text" id="ip-input" placeholder="Enter IP to whitelist">
+                <button onclick="addIpToWhitelist()">Add IP</button>
+            </div>
+            <div id="whitelist-container" class="log-container">
+                <p class="no-alerts">Fetching whitelisted IPs...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const alertsContainer = document.getElementById('alerts-container');
+        const successContainer = document.getElementById('success-container');
+        const whitelistContainer = document.getElementById('whitelist-container');
+
+        async function fetchData() {
+            // Fetch failed attempts (anomalies)
+            fetchAndDisplay(
+                'http://localhost:8000/alerts?is_anomaly=true', 
+                alertsContainer, 
+                'alert', 
+                'No new alerts found.'
+            );
+
+            // Fetch successful attempts
+            fetchAndDisplay(
+                'http://localhost:8000/alerts?is_anomaly=false', 
+                successContainer, 
+                'log', 
+                'No successful attempts found.'
+            );
+        }
+
+        async function fetchAndDisplay(url, container, itemClass, emptyMessage) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`API responded with status ${response.status}`);
+                const items = await response.json();
+
+                container.innerHTML = ''; // Clear previous items
+
+                if (items.length === 0) {
+                    container.innerHTML = `<p class="no-alerts">${emptyMessage}</p>`;
+                } else {
+                    items.forEach(item => {
+                        const itemDiv = document.createElement('div');
+                        // Add a class for resolved alerts to style them differently
+                        itemDiv.className = item.status === 'resolved' ? `${itemClass} alert-resolved` : itemClass;
+
+                        const timestamp = new Date(item.timestamp * 1000).toLocaleString();
+                        const prefix = item.is_anomaly ? 'ALERT' : 'SUCCESS';
+
+                        let content = `<strong>[${prefix}]</strong> [${timestamp}] [Status: ${item.status}] ${item.message}`;
+
+                        // Show resolve button only for 'new' alerts
+                        if (item.is_anomaly && item.status === 'new') {
+                            content += ` <button onclick="updateStatus('${item.id}', 'resolved')">Resolve</button>`;
+                            content += ` <button onclick="alert('Under Development')" style="margin-left: 5px;">Investigate</button>`;
+                        } else if (item.is_anomaly && item.status === 'resolved') {
+                            content += ` <button onclick="updateStatus('${item.id}', 'new')">Re-open</button>`;
+                        }
+
+                        itemDiv.innerHTML = content;
+                        container.appendChild(itemDiv);
+                    });
+                }
+            } catch (error) {
+                console.error(`Failed to fetch from ${url}:`, error);
+                container.innerHTML = '<p style="color: red;">Error fetching data from the API.</p>';
+            }
+        }
+
+        async function updateStatus(alertId, newStatus) {
+            try {
+                const response = await fetch(`http://localhost:8000/alerts/${alertId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                if (!response.ok) {
+                    throw new Error(`API responded with status ${response.status}`);
+                }
+                console.log(`Successfully set status to ${newStatus} for alert ${alertId}`);
+                fetchData(); // Refresh the data immediately after an action
+            } catch (error) {
+                console.error(`Failed to update status for alert ${alertId}:`, error);
+            }
+        }
+
+        async function fetchWhitelist() {
+            try {
+                const response = await fetch('http://localhost:8000/whitelist');
+                if (!response.ok) throw new Error(`API responded with status ${response.status}`);
+                const data = await response.json();
+                const ips = data.whitelisted_ips;
+
+                whitelistContainer.innerHTML = ''; // Clear previous items
+
+                if (ips.length === 0) {
+                    whitelistContainer.innerHTML = `<p class="no-alerts">No IPs are currently whitelisted.</p>`;
+                } else {
+                    ips.forEach(ip => {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'whitelist-item';
+                        itemDiv.innerHTML = `
+                            <span>${ip}</span>
+                            <button onclick="removeIpFromWhitelist('${ip}')">Remove</button>
+                        `;
+                        whitelistContainer.appendChild(itemDiv);
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to fetch whitelist:', error);
+                whitelistContainer.innerHTML = '<p style="color: red;">Error fetching whitelist from the API.</p>';
+            }
+        }
+
+        async function addIpToWhitelist() {
+            const ipInput = document.getElementById('ip-input');
+            const ip = ipInput.value.trim();
+            if (!ip) {
+                alert('Please enter an IP address.');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:8000/whitelist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip: ip })
+                });
+                if (!response.ok) throw new Error(`API responded with status ${response.status}`);
+                ipInput.value = ''; // Clear input on success
+                fetchWhitelist(); // Refresh the list
+            } catch (error) {
+                console.error(`Failed to add IP ${ip} to whitelist:`, error);
+                alert(`Failed to add IP to whitelist. See console for details.`);
+            }
+        }
+
+        async function removeIpFromWhitelist(ip) {
+            if (!confirm(`Are you sure you want to remove ${ip} from the whitelist?`)) return;
+
+            try {
+                const response = await fetch(`http://localhost:8000/whitelist/${ip}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error(`API responded with status ${response.status}`);
+                fetchWhitelist(); // Refresh the list
+            } catch (error) {
+                console.error(`Failed to remove IP ${ip} from whitelist:`, error);
+                alert(`Failed to remove IP from whitelist. See console for details.`);
+            }
+        }
+
+        // Fetch alerts every 5 seconds
+        setInterval(fetchData, 5000);
+
+        // Initial fetch
+        fetchData();
+        fetchWhitelist();
+    </script>
+</body>
+</html>
