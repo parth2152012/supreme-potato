@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+aiokafka
+elasticsearch[async]==8.13.0
+httpx
+redis
+weasyprint
+jinja2
+matplotlib
