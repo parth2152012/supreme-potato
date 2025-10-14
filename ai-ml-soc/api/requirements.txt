@@ -1,4 +1,0 @@
-fastapi==0.111.0
-uvicorn==0.29.0
-aiokafka==0.10.0
-elasticsearch[async]==8.13.0

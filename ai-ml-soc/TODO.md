@@ -1,6 +1,0 @@
-- [x] Create frontend/Dockerfile with nginx to serve index.html
-- [x] Remove nginx from frontend Dockerfile and use python http server instead
-- [x] Add /alerts/update_status endpoint in api/app.py to update status in Elasticsearch
-- [x] Modify frontend/index.html to add buttons for updating alert status (e.g., resolve)
-- [x] Remove db dependency from api service in docker-compose.yml since DB is not used in code
-- [x] Test the fixes by running docker-compose up
